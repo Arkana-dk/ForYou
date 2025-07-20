@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Magnetic Heart Particles + Music</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    display:flex;justify-content:center;align-items:center;
+    background:#000;font-family:"Inter","Segoe UI",sans-serif;
+    overflow:hidden
+  }
+  canvas{display:block;touch-action:none}
+
+  /* ==== Music UI ==== */
+  .music-ui{
+    position:fixed;top:16px;right:16px;z-index:10;
+    display:flex;align-items:center;gap:8px
+  }
+  .music-ui button{
+    width:36px;height:36px;border:none;border-radius:50%;
+    background:#ffffff22;backdrop-filter:blur(4px);
+    display:flex;justify-content:center;align-items:center;
+    font-size:18px;color:#6bb5ff;cursor:pointer;
+    transition:background .3s
+  }
+  .music-ui button:hover{background:#ffffff3c}
+  .music-ui select{
+    background:#ffffff22;color:#6bb5ff;border:1px solid #ffffff44;
+    padding:4px 8px;border-radius:6px;cursor:pointer;
+    font-size:13px;backdrop-filter:blur(4px);
+  }
+</style>
+</head>
+<body>
+  <canvas id="cv"></canvas>
+
+  <!-- ==== Music controls ==== -->
+  <div class="music-ui">
+    <button id="musicBtn" title="Play/Pause">🔇</button>
+    <select id="musicSel"></select>
+  </div>
+  <audio id="bgm" preload="auto" loop></audio>
+
+<script>
+/* ==================== MUSIC ==================== */
+const tracks=[
+  {name:'Those Eyes', src:'those_eyes.mp3'},
+  {name:'Angel Baby', src:'angel_baby.mp3'},
+  {name:'Give_Me_Your_Forever', src:'Give_Me_Your_Forever.mp3'}
+];
+const audio=document.getElementById('bgm');
+const sel  =document.getElementById('musicSel');
+const btn  =document.getElementById('musicBtn');
+
+/* isi dropdown */
+tracks.forEach(t=>{
+  const o=document.createElement('option');
+  o.value=t.src; o.textContent=t.name;
+  sel.appendChild(o);
+});
+/* default lagu pertama */
+audio.src=tracks[0].src;
+
+/* helper: perbarui ikon */
+function updateIcon(){btn.textContent=audio.paused?'🔇':'🎵';}
+
+/* play / pause */
+btn.addEventListener('click',()=>{
+  if(audio.paused) audio.play(); else audio.pause();
+});
+audio.addEventListener('play', updateIcon);
+audio.addEventListener('pause',updateIcon);
+
+/* ganti lagu */
+sel.addEventListener('change',()=>{
+  audio.src=sel.value;
+  audio.play();
+});
+
+/* ==================== PARTICLES ==================== */
+/* ==== Canvas setup ==== */
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W,H,DPR=window.devicePixelRatio||1;
+function resize(){
+  W=innerWidth; H=innerHeight;
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  cv.width=W*DPR; cv.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+resize(); addEventListener('resize',resize);
+
+/* ==== Helpers ==== */
+function heartF(x,y){const a=x*x+y*y-1;return a*a*a-x*x*y*y*y;}
+function rndHeart(){for(;;){const x=Math.random()*2.8-1.4,y=Math.random()*2.6-1.3;if(heartF(x,y)<=0)return{x,y};}}
+const SCALE = ()=>Math.min(W,H)/3.2, BASEY = ()=>H*0.72;
+
+/* ==== Parameters ==== */
+const COUNT=1600, SPAWN_SPREAD=2.5, FLOAT_TIME=3, CLOUD_TIME=3,
+      HOLD_TIME=4,   FALL_TIME=1.5, GATHER_TIME=2.6,
+      BLUR_ALPHA=0.68, GRAVITY=0.02, SCATTER_MULT=3,
+      RELEASE_SPREAD=1.2, GATHER_EASE=p=>1-Math.pow(1-p,3);
+const smoothStep=p=>p*p*(3-2*p), easeInOut=p=>0.5*(1-Math.cos(Math.PI*p));
+
+/* ==== Particle ==== */
+class Particle{
+  constructor(){this.init(0);}
+  init(t0){
+    const h=rndHeart();
+    this.tx=W/2+h.x*SCALE();
+    this.ty=H*0.46-h.y*SCALE();
+
+    this.startX=Math.random()*W;
+    this.startY=BASEY()+Math.random()*60;
+
+    const ang=Math.random()*Math.PI*2,rad=Math.random()*40;
+    this.sx=Math.cos(ang)*rad; this.sy=Math.sin(ang)*rad;
+
+    this.size=1+Math.random()*1.4;
+    this.alpha=0;
+    this.seed=Math.random()*6.283;
+
+    this.birthDelay=Math.random()*SPAWN_SPREAD;
+    this.releaseDelay=Math.random()*RELEASE_SPREAD;
+
+    this.phase='wait'; this.t0=t0;
+    this.vx=this.vy=0;
+  }
+  update(t){
+    if(this.phase==='wait'){
+      if(t-this.t0 < this.birthDelay) return;
+      this.phase='float'; this.t0=t;
+    }
+    if(this.phase==='float'){
+      const p=Math.min(1,(t-this.t0)/FLOAT_TIME);
+      const k=smoothStep(p);
+      this.x=this.startX+Math.sin(t*1.5+this.seed)*12*(1-k);
+      this.y=this.startY-(this.startY-(this.ty+this.sy))*k;
+      this.alpha=Math.min(1,p*2);
+      if(p===1){this.phase='cloud';this.t0=t;}
+    }else if(this.phase==='cloud'){
+      const pc=Math.min(1,(t-this.t0)/CLOUD_TIME);
+      const k=0.5*(1+Math.cos(Math.PI*pc));
+      this.x=this.tx+this.sx*k;
+      this.y=this.ty+this.sy*k;
+      if(pc===1){this.phase='stay';this.t0=t;}
+    }else if(this.phase==='stay'){
+      this.x=this.tx+Math.sin(t*3+this.seed)*2;
+      this.y=this.ty+Math.cos(t*3+this.seed)*2;
+      if(t-this.t0 > HOLD_TIME){this.phase='scatterWait'; this.t0=t;}
+    }else if(this.phase==='scatterWait'){
+      if(t-this.t0 < this.releaseDelay) return;
+      this.phase='scatter'; this.t0=t;
+    }else if(this.phase==='scatter'){
+      const ps=Math.min(1,(t-this.t0)/FALL_TIME);
+      const k=easeInOut(ps);
+      this.x=this.tx+this.sx*SCATTER_MULT*k;
+      this.y=this.ty+this.sy*SCATTER_MULT*k + k*k*80;
+      this.alpha=1-k*0.4;
+      this.size*=0.993;
+      if(ps===1){
+        this.gx=this.x; this.gy=this.y; this.size0=this.size;
+        this.phase='gather'; this.t0=t;
+      }
+    }else if(this.phase==='gather'){
+      const pg=Math.min(1,(t-this.t0)/GATHER_TIME);
+      const k=GATHER_EASE(pg);
+      this.x=this.gx+(this.tx-this.gx)*k;
+      this.y=this.gy+(this.ty-this.gy)*k;
+      this.size=this.size0*(1-0.5*pg);
+      this.alpha=0.6+0.4*(1-k);
+      if(pg===1){
+        this.size=1+Math.random()*1.4;
+        this.phase='stay'; this.t0=t;
+      }
+    }
+  }
+  draw(){
+    if(this.alpha<=0)return;
+    ctx.globalAlpha=this.alpha;
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+
+/* ==== Batch controller ==== */
+let particles=[];
+function spawnBatch(t){
+  particles=Array.from({length:COUNT},()=>{const p=new Particle(); p.t0=t; return p;});
+}
+spawnBatch(0);
+
+/* ==== Main loop ==== */
+ctx.fillStyle='#6bb5ff';
+function loop(ms){
+  const t=ms/1000;
+  ctx.globalAlpha=1;
+  ctx.fillStyle=`rgba(0,0,0,${BLUR_ALPHA})`;
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle='#6bb5ff';
+  ctx.globalCompositeOperation='lighter';
+  particles.forEach(p=>{p.update(t);p.draw();});
+  ctx.globalCompositeOperation='source-over';
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
